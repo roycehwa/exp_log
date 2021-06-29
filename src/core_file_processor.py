@@ -1,10 +1,9 @@
-
 import os
 import re
 import json
 import datetime
 import time
-import pymysql
+from src.db_processor import DB,DBConnect
 
 from db import boilerplate as bp
 from config import config
@@ -237,38 +236,25 @@ class FileProcessor(object):
                 table.append(tuple(items))
 
         if param == '-e':
-            uploader = UpLoader(table,"expense")
-            uploader.upload()
+            handle = DBHandler(table,"expense")
+            handle.upload()
 
         elif param == '-b':
-            uploader = UpLoader(table,"balance")
-            uploader.upload()
+            handle = DBHandler(table,"balance")
+            handle.upload()
 
-class UpLoader(object):
-    tables = {'expense':"exp_items","balance":"balance"}
-    fields = {
-            'expense':"(time,vendor,items,amount,in_or_out,type,account)",
-            'balance':"(Bank,currency,date,transaction,amount,balance,note)"}
-    procedure = {'expense':"sorting","balance":"sorting_b"}
-    """
-    database: 输入表名
-    source: 数据源
-    """
+class DBHandler(object):
+
     def __init__(self,source,type):
         self.source = source
-        self.table = UpLoader.tables.get(type)
-        self.field = UpLoader.fields.get(type)
-        self.procedure = UpLoader.procedure.get(type)
-        self.conn = pymysql.connect(host="localhost", user='root', password="Royce20310000", database='Exp_inv')
-        self.cursor = self.conn.cursor()
+        self.table,self.field,self.procedure = config.db_dict.get(type).values()
 
     def upload(self):
         sql = "insert into {} {} values(%s,%s,%s,%s,%s,%s,%s)".format(self.table,self.field)
         print(sql)
-        rows = self.cursor.executemany(sql,self.source)
-        print("{} lines are uploaded.".format(rows))
-        self.conn.commit()
-        self.cursor.callproc(self.procedure)
-        print(self.cursor.fetchall())
+        with DBConnect() as conn_obj:
+            rows = conn_obj.execute_many(sql,self.source)
+            print("{} lines are uploaded.".format(rows))
+            conn_obj.commit()
+            conn_obj.cursor.callproc(self.procedure)
         return
-
