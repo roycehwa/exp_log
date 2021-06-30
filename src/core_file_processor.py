@@ -30,6 +30,7 @@ class FileProcessor(object):
         [clean|format|upload] [file_name] [-e|-b] 
         clean       clean data
         format      format data
+        convert     format and clean data
         upload      upload data to sql
         -e          target data is expenditure
         -b          target data is balance
@@ -53,33 +54,60 @@ class FileProcessor(object):
             file_object = self.sys_argv[2]
             func(file_object,param)
 
+
     def format(self,file_object,param):
-        print("格式化文件...")
+        print("格式化调整文件...")
+        sheet = self.unpack(file_object)
+        f_sheet = self.format_data(sheet, param)
+        t_tag = datetime.datetime.now().strftime("%y%m%d")
+        tag = "f_{}{}".format(t_tag,file_object)
+        self.write_doc(f_sheet,tag)
+
+    def clean(self,file_object,param):
+        print("正在清理文件内容...")
+        sheet = self.unpack(file_object)
+        c_sheet = self.clean_data(sheet, param)
+        t_tag = datetime.datetime.now().strftime("%y%m%d")
+        tag = "c_{}{}".format(t_tag,file_object)
+        self.write_doc(c_sheet,tag)
+
+    def convert(self,file_object,param):
+    #一步完成格式化与数据清理
+        sheet = self.unpack(file_object)
+        f_sheet = self.format_data(sheet, param)
+        c_sheet = self.clean_data(f_sheet, param)
+        t_tag = datetime.datetime.now().strftime("%y%m%d")
+        tag = "convert_{}{}".format(t_tag,file_object)
+        self.write_doc(c_sheet,tag)
+
+    def unpack(self,file_object):
+        with open(file_object,mode='r',encoding='utf-8-sig') as file:
+            data_lines = file.readlines()
+            return data_lines
+
+    def write_doc(self, data, tag):
+        with open(tag, mode='w+', encoding='utf-8') as doc:
+            [doc.write(item) for item in data]
+        print("数据被存储为{}".format(tag))
+
+    def format_data(self,data,param):
 
         if param == "-e":
             account = input("请输入支出账户:  ")
             # TODO:判断account是否合法
             header_ind = ["time","vendor","items","amount","in_or_out"]
-            with open(file_object,mode="r",encoding='utf-8') as file:
-                lines = file.readlines()
-                length = len(lines)
-                header = lines[0]
-                headers = header.split(',')
-                head_number = [headers.index(field) for field in header_ind]
-                tag = datetime.datetime.now().strftime("%Y%m%d")
-                file_new = "{}{}".format(tag,file_object)
-                with open(file_new,mode='a',encoding='utf-8') as clean_file:
-                    for i in range(1,length):
-                        line = lines[i]
-                        content = line.split(',')
-                        clean_content = [content[hn].strip() for hn in head_number]
-                        clean_content.append("__")
-                        clean_content.append(account.strip())
-                        clean_content.append("\n")
-                        newline = ",".join(clean_content)
-                        clean_file.write(newline)
+            header = data[0].split(",")
+            head_number = [header.index(field) for field in header_ind]
+            result = []
+            for i in data[1:]:
+                content = i.split(',')
+                clean_content = [content[hn].strip() for hn in head_number]
+                clean_content.append("__")
+                clean_content.append(account.strip())
+                clean_content.append("\n")
+                result.append(",".join(clean_content))
 
-            print("数据格式化完成，存储于文件{}中。".format(file_new))
+            return result
 
         elif param =='-b':
             header_ind = ["date", "time", "transaction", "amount", "balance", "note"]
@@ -92,99 +120,81 @@ class FileProcessor(object):
             for item in bank_list.items():
                 print("{} - {}".format(*item))
 
-            bank = input("请输入银行编号: ")
+            while True:
+                bank = input("请输入银行编号: ")
+                if bank not in bank_list.keys():
+                    print("请输入正确的银行编号（1-10）\n")
+                else: break
+
             currency = "USD" if input("RMB 或者 USD (U - USD, 其他 RMB)").upper() == "U" else "RMB"
 
-            with open(file_object, mode="r", encoding='utf-8-sig') as file:
-                lines = file.readlines()
-                # 从源文件中找到date...等栏目的序号，组成列表，采用列表推导式从读取重构新文件
-                length = len(lines)
-                header = lines[0]
-                hea = header.split(',')
-                headers = [i.strip().strip("\n") for i in hea]
-                head_number = []  # 此为列数的序列，纪录源文件中相应的列具体位置
-                for field in header_ind:
-                    head_number.append(headers.index(field))
-                tag = datetime.datetime.now().strftime("%Y%m%d")
-                file_new = "{}{}".format(tag, file_object)
-                with open(file_new, mode='a', encoding='utf-8') as clean_file:
-                    for i in range(1, length):
-                        clean_content = []
-                        line = lines[i]
-                        content = line.split(',')
-                        for i in range(0, len(content)):
-                            content[i] = content[i].strip("\"").strip("\t").strip("\n")
-                        clean_content.append(bank)
-                        clean_content.append(currency)
-                        clean_content.append(
-                            "{}/{}/{}".format(content[head_number[0]][:4], content[head_number[0]][4:6],
-                                              content[head_number[0]][-2:]))
-                        #格式化日期为YYYY/MM/DD
-                        [clean_content.append(content[head_num]) for head_num in head_number[1:]]
-                        clean_content.append("\n")
-                        newline = ",".join(clean_content)
-                        clean_file.write(newline)
+            header = data[0].split(',')
+            headers = [i.strip().strip("\n") for i in header]
+            head_number = [headers.index(field) for field in header_ind]  # 此为列数的序列，纪录源文件中相应的列具体位置
+            result = []
+            for line in data[1:]:
+                clean_content = []
+                content = line.split(',')
+                for i in range(0, len(content)):
+                    content[i] = content[i].strip('"').strip("\t").strip("\n").strip('"')
+                clean_content.append(bank)
+                clean_content.append(currency)
+                clean_content.append(
+                    "{}/{}/{}".format(content[head_number[0]][:4], content[head_number[0]][4:6],
+                                      content[head_number[0]][-2:]))
+                #格式化日期为YYYY/MM/DD
+                [clean_content.append(content[head_num]) for head_num in head_number[1:]]
+                clean_content.append("\n")
+                result.append(",".join(clean_content))
 
-            print("data format completed, saved in {}".format(file_new))
+            return result
 
         else:
             print("Invalid params (-b or -e)")
 
-    def clean(self,file_object,param):
-        print("Cleaning")
+    def clean_data(self,data,param):
+
         self.update_pool = { "vendor":{},"items": {}}
+        # 用于每次清理后添加新的高频词到字库中
+        result = []
 
         if param == "-e":
-            clean_file = "clean_{}".format(file_object)
-            with open(clean_file,mode='a',encoding='utf-8') as clean_chart:
-                with open(file_object,mode='r',encoding='utf-8') as chart:
-                    un_cat = 0
-                    for line in chart:
-                        fields = line.split(',')
-                        if fields[4].strip() != "支出":
-                            continue
-                        else:
-                            vendor,item = fields[1:3]
-                            fields[1]=self.simp_v(vendor)  # 简化vendor名称
-                            fields[2]=self.simp_i(item)
-                            fields[-3]= self.categorize(fields[1],fields[2])# 根据简化名称确定门类
-                            if fields[-3] == "0" : un_cat += 1
-                            clean_content = ",".join(fields)
-                        clean_chart.write(clean_content)
-                    print("{} 行没有被分类，请自行分类。".format(un_cat))
+            un_cat = 0
+            for line in data:
+                fields = line.split(',')
+                if fields[4].strip() != "支出":
+                    continue
+                else:
+                    vendor,item = fields[1:3]
+                    fields[1]=self.simp_v(vendor)  # 简化vendor名称
+                    fields[2]=self.simp_i(item)
+                    fields[-3]= self.categorize(fields[1],fields[2])# 根据简化名称确定门类
+                    if fields[-3] == "0" : un_cat += 1
+                    result.append(",".join(fields))
+            print("{} 行没有被分类，请自行分类。".format(un_cat))
 
-            with open(self.vd_item_update,"w+",encoding='utf-8') as f:
+            with open(self.vd_item_update, "w+", encoding='utf-8') as f:
                 try:
                     vd_pool = json.load(f)
                 except Exception:
                     vd_pool = {}
                 vd_pool.update(self.update_pool)
-                json.dump(vd_pool,f)
+                json.dump(vd_pool, f)
 
         if param == "-b":
             """balance表格"""
-            clean_file = "clean_{}".format(file_object)
-            with open(clean_file,mode='a',encoding='utf-8') as clean_chart:
-                with open(file_object,mode='r',encoding='utf-8') as chart:
-                    for line in chart:
-                        fields = line.split(',')
-                        time = " ".join(fields[2:4])
-                        fields[2] = time
-                        fields.pop(3)
-                        trans = fields[3].strip()
-                        fields[3] = trans
-                        if not fields[-1]:
-                            fields[-1] = "-----"
-                        clean_content = ",".join(fields)
-                        clean_chart.write(clean_content)
+            for line in data:
+                fields = line.split(',')
+                time = " ".join(fields[2:4])
+                fields[2] = time
+                fields.pop(3)
+                trans = fields[3].strip()
+                fields[3] = trans
+                if not fields[-1]:
+                    fields[-1] = "-----"
+                result.append(",".join(fields))
 
-            with open(self.vd_item_update,"w+",encoding='utf-8') as f:
-                try:
-                    vd_pool = json.load(f)
-                except Exception:
-                    vd_pool = {}
-                vd_pool.update(self.update_pool)
-                json.dump(vd_pool,f)
+        return result
 
     def simp_v(self,vendor):
         rpl = vendor.strip()
