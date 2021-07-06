@@ -2,57 +2,38 @@ import os
 import re
 import json
 import datetime
-import time
 from src.db_processor import DB,DBConnect
 
 from db import boilerplate as bp
 from config import config
 
 class FileProcessor(object):
-    def __init__(self,sys_argv):
-        self.sys_argv = sys_argv
-        self.verfiy_argv()
+    def __init__(self, params):
+        self.params = params
         self.boilerplate = bp.strings
         self.update_pool = {}
         self.vd_item_update = config.clean_kw
         with open(config.category,mode='r',encoding='utf-8') as cat:
             self.category = json.load(cat)
 
-    def verfiy_argv(self):
-        if len(self.sys_argv)< 3:
-            self.help_msg()
-        cmd = self.sys_argv[1]
-        if not hasattr(self,cmd):
-            self.help_msg()
-
-    def help_msg(self):
-        msg = """
-        [clean|format|upload] [file_name] [-e|-b] 
-        clean       clean data
-        format      format data
-        convert     format and clean data
-        upload      upload data to sql
-        -e          target data is expenditure
-        -b          target data is balance
-        """
-        #TODO: allinone 用于从原始数据到完整结构数据的连续操作
-        exit(msg)
-
     def execute(self):
-        file_name = self.sys_argv[2]
-        print(file_name)
-        if not os.path.exists(file_name):
-            print("文件{}不存在,请核查后操作。".format(file_name))
-            return
-        elif file_name.split('.')[-1]!='csv':
-            print("请传入CSV文件.")
-            return
+
+        if self.params.operation in config.file_based_function:
+            if not self.params.file:
+                print("需要附带数据文件，请标明文件名。")
+                return
+            elif self.params.file.split('.')[-1]!='csv':
+                print("请传入CSV文件.")
+                return
+            else:
+                cmd = self.params.operation
+                param = self.params.mode
+                func = getattr(self,cmd)
+                file_object = self.params.file
+                func(file_object,param)
         else:
-            cmd = self.sys_argv[1]
-            param = self.sys_argv[3]
-            func = getattr(self,cmd)
-            file_object = self.sys_argv[2]
-            func(file_object,param)
+        # 不带文件操作的功能，如项目分类，查询数据库
+            pass
 
 
     def format(self,file_object,param):
@@ -92,7 +73,7 @@ class FileProcessor(object):
 
     def format_data(self,data,param):
 
-        if param == "-e":
+        if param == "expense":
             account = input("请输入支出账户:  ")
             # TODO:判断account是否合法
             header_ind = ["time","vendor","items","amount","in_or_out"]
@@ -109,7 +90,7 @@ class FileProcessor(object):
 
             return result
 
-        elif param =='-b':
+        elif param =='bank':
             header_ind = ["date", "time", "transaction", "amount", "balance", "note"]
             bank_list = {"1": "招商银行-2944RMB", "2": "招商银行-2944USD",
                          "3": "招商银行-0852RMB", "4": "招商银行-0852USD",
@@ -158,7 +139,7 @@ class FileProcessor(object):
         # 用于每次清理后添加新的高频词到字库中
         result = []
 
-        if param == "-e":
+        if param == "expense":
             un_cat = 0
             for line in data:
                 fields = line.split(',')
@@ -181,7 +162,7 @@ class FileProcessor(object):
                 vd_pool.update(self.update_pool)
                 json.dump(vd_pool, f)
 
-        if param == "-b":
+        if param == "bank":
             """balance表格"""
             for line in data:
                 fields = line.split(',')
@@ -245,11 +226,11 @@ class FileProcessor(object):
                 items = line.split(',')[:-1]
                 table.append(tuple(items))
 
-        if param == '-e':
+        if param == 'expense':
             handle = DBHandler(table,"expense")
             handle.upload()
 
-        elif param == '-b':
+        elif param == 'bank':
             handle = DBHandler(table,"balance")
             handle.upload()
 
